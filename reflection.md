@@ -18,7 +18,7 @@ Owner, Pet, Task, Scheduler
 - Did your design change during implementation?
 - If yes, describe at least one change and why you made it.
 
----
+Yes I made a change clarifying the relationship between pets and the tasks. Tasks do not store a reference to their pet to avoid unnecessary coupling and circular dependencies. Instead, pets own their tasks, and the scheduler accesses tasks through pets. This keeps the system simple and easier to maintain.
 
 ## 2. Scheduling Logic and Tradeoffs
 
