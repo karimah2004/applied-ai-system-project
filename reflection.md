@@ -41,12 +41,14 @@ Yes I made a change clarifying the relationship between pets and the tasks. Task
 - How did you use AI tools during this project (for example: design brainstorming, debugging, refactoring)?
 - What kinds of prompts or questions were most helpful?
 
+I used AI tools to brainstorm the design, the UML diagram. I also used it for implementation and clarification and testing. Prompts that were most helpful were explain this line, is this line necessary and why and how can i make this simpler.
+
 **b. Judgment and verification**
 
 - Describe one moment where you did not accept an AI suggestion as-is.
 - How did you evaluate or verify what the AI suggested?
 
----
+I did not accept when it tried to automatically re write the app.py file, I asked it to go in sections so I could validate as I go. I verified with tests and checking the app manually.
 
 ## 4. Testing and Verification
 
@@ -55,10 +57,14 @@ Yes I made a change clarifying the relationship between pets and the tasks. Task
 - What behaviors did you test?
 - Why were these tests important?
 
+I tested sorting correctness, conflict detection, reccuring task logic, tasking filtering and CRUD operations. These were important because the scheduling algorithm is the core feature and must work correctly.
+
 **b. Confidence**
 
 - How confident are you that your scheduler works correctly?
 - What edge cases would you test next if you had more time?
+
+I am fairly confident the scheduler works correctly. There may have been some edge cases that I overlooked and so I would say 4/5. If I had more time I would prompt the AI to create some more test cases that couldve been overlooked.
 
 ---
 
@@ -68,10 +74,16 @@ Yes I made a change clarifying the relationship between pets and the tasks. Task
 
 - What part of this project are you most satisfied with?
 
+I am most satisfied with the scheduling functionality.
+
 **b. What you would improve**
 
 - If you had another iteration, what would you improve or redesign?
 
+I would improve the UI if I had more time and develop the display
+
 **c. Key takeaway**
 
 - What is one important thing you learned about designing systems or working with AI on this project?
+
+It is important to understand what the suggestions being created are doing. If you blindly accept a suggestion, you are not really learning why that piece is being added, and it might be unneccesary.
