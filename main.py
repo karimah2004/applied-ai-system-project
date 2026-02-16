@@ -69,24 +69,16 @@ print(f"✓ Added {luna.name} ({luna.species}, {luna.age_years} years old)")
 owner.add_pet(mochi)
 owner.add_pet(luna)
 
-# Add tasks for Mochi
-print_header("Adding Tasks for Mochi")
+# Add tasks for Mochi (OUT OF ORDER to test sorting!)
+print_header("Adding Tasks for Mochi (Out of Order)")
 
 mochi_tasks = [
     Task(
-        title="Morning walk",
-        category="exercise",
-        duration_minutes=30,
-        priority=3,
-        due_time="08:00",
-        frequency="daily"
-    ),
-    Task(
-        title="Breakfast",
-        category="feeding",
-        duration_minutes=10,
-        priority=5,
-        due_time="07:30",
+        title="Playtime in yard",
+        category="enrichment",
+        duration_minutes=20,
+        priority=2,
+        due_time=None,  # Flexible time
         frequency="daily"
     ),
     Task(
@@ -94,15 +86,23 @@ mochi_tasks = [
         category="health",
         duration_minutes=5,
         priority=5,
-        due_time="09:00",
+        due_time="09:00",  # Later time
         frequency="daily"
     ),
     Task(
-        title="Playtime in yard",
-        category="enrichment",
-        duration_minutes=20,
-        priority=2,
-        due_time=None,
+        title="Morning walk",
+        category="exercise",
+        duration_minutes=30,
+        priority=3,
+        due_time="08:00",  # Middle time
+        frequency="daily"
+    ),
+    Task(
+        title="Breakfast",
+        category="feeding",
+        duration_minutes=10,
+        priority=5,
+        due_time="07:30",  # Earliest time
         frequency="daily"
     )
 ]
@@ -112,33 +112,41 @@ for task in mochi_tasks:
     time_str = task.due_time if task.due_time else "flexible"
     print(f"  ✓ {task.title:25} | {time_str:10} | {task.duration_minutes} min | Priority {task.priority}")
 
-# Add tasks for Luna
-print_header("Adding Tasks for Luna")
+# Add tasks for Luna (OUT OF ORDER to test sorting!)
+print_header("Adding Tasks for Luna (Out of Order)")
 
 luna_tasks = [
     Task(
-        title="Breakfast",
-        category="feeding",
-        duration_minutes=5,
-        priority=4,
-        due_time="07:30",
-        frequency="daily"
+        title="Brushing",
+        category="grooming",
+        duration_minutes=15,
+        priority=1,
+        due_time=None,  # Flexible
+        frequency="weekly"
     ),
     Task(
         title="Litter box cleaning",
         category="hygiene",
         duration_minutes=10,
         priority=3,
-        due_time="10:00",
+        due_time="10:00",  # Later time
         frequency="daily"
     ),
     Task(
-        title="Brushing",
-        category="grooming",
-        duration_minutes=15,
-        priority=1,
-        due_time=None,
-        frequency="weekly"
+        title="Breakfast",
+        category="feeding",
+        duration_minutes=5,
+        priority=4,
+        due_time="07:30",  # SAME TIME as Mochi's breakfast - exact conflict!
+        frequency="daily"
+    ),
+    Task(
+        title="Playtime",
+        category="enrichment",
+        duration_minutes=25,
+        priority=2,
+        due_time="07:50",  # Overlaps with Mochi's 08:00 walk - overlap conflict!
+        frequency="daily"
     )
 ]
 
@@ -147,10 +155,66 @@ for task in luna_tasks:
     time_str = task.due_time if task.due_time else "flexible"
     print(f"  ✓ {task.title:25} | {time_str:10} | {task.duration_minutes} min | Priority {task.priority}")
 
+# Test sorting and filtering methods
+print_header("Testing Lambda Sorting & Filtering")
+
+scheduler = Scheduler(owner)
+
+# Demo 1: Show tasks sorted by priority + time
+print("\n📊 All Mochi's tasks SORTED (by priority, then time):")
+sorted_tasks = scheduler.sort_tasks(mochi.tasks)
+for task in sorted_tasks:
+    time_str = task.due_time if task.due_time else "flexible"
+    print(f"  Priority {task.priority} | {time_str:10} | {task.title}")
+
+# Demo 2: Filter incomplete tasks for Mochi
+print("\n🔍 Filter: Mochi's incomplete tasks:")
+incomplete = scheduler.filter_tasks(pet_name="Mochi", completed=False)
+for task in incomplete:
+    print(f"  - {task.title}")
+
+# Demo 3: Filter all tasks across all pets
+print("\n🔍 Filter: All tasks for all pets:")
+all_tasks = scheduler.filter_tasks(pet_name=None, completed=False)
+for task in all_tasks:
+    time_str = task.due_time if task.due_time else "flexible"
+    print(f"  {time_str:10} | {task.title}")
+
+# Demo 4: Test recurring task auto-creation
+print_header("Testing Recurring Task Auto-Creation")
+
+# Show Mochi's current tasks
+print(f"\n📋 Mochi's tasks BEFORE completion ({len(mochi.tasks)} total):")
+for task in mochi.tasks:
+    status = "✓" if task.completed else "○"
+    print(f"  {status} {task.title} (frequency: {task.frequency}, ID: {task.id[:8]}...)")
+
+# Complete a daily recurring task (Breakfast)
+breakfast_task = mochi.tasks[3]  # Breakfast is the 4th task added
+print(f"\n🎯 Completing '{breakfast_task.title}' (daily task)...")
+new_task = scheduler.complete_task(pet_name="Mochi", task_id=breakfast_task.id)
+
+if new_task:
+    print(f"   ✅ Task completed!")
+    print(f"   🔄 Auto-created next occurrence: '{new_task.title}' (ID: {new_task.id[:8]}...)")
+else:
+    print(f"   ✅ Task completed (no auto-creation for 'once' frequency)")
+
+# Show Mochi's tasks after completion
+print(f"\n📋 Mochi's tasks AFTER completion ({len(mochi.tasks)} total):")
+for task in mochi.tasks:
+    status = "✓" if task.completed else "○"
+    print(f"  {status} {task.title} (frequency: {task.frequency}, ID: {task.id[:8]}...)")
+
+# Filter to show only incomplete tasks
+incomplete_after = scheduler.filter_tasks(pet_name="Mochi", completed=False)
+print(f"\n🔍 Mochi's incomplete tasks: {len(incomplete_after)}")
+for task in incomplete_after:
+    print(f"  - {task.title}")
+
 # Generate and print schedule
 print_header("Generating Today's Schedule")
 
-scheduler = Scheduler(owner)
 schedule = scheduler.generate_plan(date="2026-02-15")
 
 print_schedule(schedule)

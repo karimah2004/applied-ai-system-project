@@ -184,8 +184,8 @@ class Scheduler:
             for task in pet.list_tasks(include_completed=False):
                 tasks_with_pets.append((task, pet.name))
 
-        # Sort tasks by priority and time
-        tasks_with_pets.sort(key=lambda tp: (-tp[0].priority, tp[0].time_key()))
+        # Sort tasks by priority and time using lambda for HH:MM string sorting
+        tasks_with_pets.sort(key=lambda tp: (-tp[0].priority, tp[0].due_time if tp[0].due_time else "99:99"))
 
         # Schedule tasks within available time
         scheduled_tasks = []
@@ -207,9 +207,8 @@ class Scheduler:
             else:
                 unscheduled_tasks.append((task, pet_name))
 
-        # Detect conflicts in scheduled tasks
-        scheduled_task_objects = [st.task for st in scheduled_tasks]
-        conflicts = self.detect_conflicts(scheduled_task_objects)
+        # Detect conflicts in scheduled tasks (pass ScheduledTask objects with pet info)
+        conflicts = self.detect_conflicts_with_pets(scheduled_tasks)
 
         return Schedule(
             date=date,
@@ -220,13 +219,14 @@ class Scheduler:
         )
 
     def sort_tasks(self, tasks: list[Task]) -> list[Task]:
-        """Sort tasks by priority and time."""
+        """Sort tasks by priority and time using lambda for HH:MM format."""
         # Sort by priority (descending) then by time (ascending)
-        return sorted(tasks, key=lambda t: (-t.priority, t.time_key()))
+        # Lambda handles HH:MM string comparison, flexible tasks (None) sort to end
+        return sorted(tasks, key=lambda t: (-t.priority, t.due_time if t.due_time else "99:99"))
 
     def filter_tasks(self, pet_name: Optional[str] = None,
                     completed: Optional[bool] = None) -> list[Task]:
-        """Filter tasks by pet name and/or completion status.
+        """Filter tasks by pet name and/or completion status using lambda functions.
 
         Args:
             pet_name: If provided, only return tasks from pet with this name
@@ -235,29 +235,26 @@ class Scheduler:
         Returns:
             Filtered list of tasks. Traverses owner.pets to gather tasks.
         """
-        filtered_tasks = []
-
         # Determine which pets to check
         pets_to_check = self.owner.pets
         if pet_name:
             pet = self.owner.get_pet(pet_name)
             pets_to_check = [pet] if pet else []
 
-        # Gather tasks from selected pets
-        for pet in pets_to_check:
-            for task in pet.tasks:
-                # Filter by completion status if specified
-                if completed is None:
-                    filtered_tasks.append(task)
-                elif completed and task.completed:
-                    filtered_tasks.append(task)
-                elif not completed and not task.completed:
-                    filtered_tasks.append(task)
+        # Gather all tasks from selected pets
+        all_tasks = [task for pet in pets_to_check for task in pet.tasks]
 
-        return filtered_tasks
+        # Filter by completion status using lambda
+        if completed is None:
+            return all_tasks
+        elif completed:
+            return list(filter(lambda t: t.completed, all_tasks))
+        else:
+            return list(filter(lambda t: not t.completed, all_tasks))
+
 
     def detect_conflicts(self, tasks: list[Task]) -> list[str]:
-        """Detect scheduling conflicts in the task list."""
+        """Detect scheduling conflicts in the task list (basic version)."""
         conflicts = []
 
         # Check for time overlaps
@@ -277,3 +274,131 @@ class Scheduler:
                     )
 
         return conflicts
+
+    def detect_conflicts_with_pets(self, scheduled_tasks: list[ScheduledTask]) -> list[str]:
+        """Detect scheduling conflicts with pet information and time overlap detection.
+
+        Detects:
+        1. Exact time conflicts (same start time)
+        2. Overlapping time ranges (task duration considered)
+        3. Same-pet conflicts (owner can't do two tasks for one pet simultaneously)
+        4. Different-pet conflicts (owner can't be in two places at once)
+
+        Args:
+            scheduled_tasks: List of ScheduledTask objects with task and pet_name
+
+        Returns:
+            List of conflict messages with detailed information
+        """
+        conflicts = []
+
+        def time_to_minutes(time_str: str) -> int:
+            """Convert HH:MM to minutes since midnight."""
+            if time_str == "flexible":
+                return 9999
+            hours, mins = map(int, time_str.split(':'))
+            return hours * 60 + mins
+
+        def minutes_to_time(minutes: int) -> str:
+            """Convert minutes since midnight to HH:MM."""
+            return f"{minutes // 60:02d}:{minutes % 60:02d}"
+
+        # Check all pairs of scheduled tasks
+        for i, st1 in enumerate(scheduled_tasks):
+            task1, pet1 = st1.task, st1.pet_name
+
+            # Skip flexible tasks
+            if not task1.due_time or task1.due_time == "flexible":
+                continue
+
+            start1 = time_to_minutes(task1.due_time)
+            end1 = start1 + task1.duration_minutes
+
+            for st2 in scheduled_tasks[i + 1:]:
+                task2, pet2 = st2.task, st2.pet_name
+
+                # Skip flexible tasks
+                if not task2.due_time or task2.due_time == "flexible":
+                    continue
+
+                start2 = time_to_minutes(task2.due_time)
+                end2 = start2 + task2.duration_minutes
+
+                # Check for time overlap: [start1, end1) overlaps [start2, end2)
+                if start1 < end2 and start2 < end1:
+                    # Determine conflict type
+                    same_pet = (pet1 == pet2)
+                    exact_match = (start1 == start2)
+
+                    if exact_match:
+                        # Exact time match
+                        if same_pet:
+                            conflicts.append(
+                                f"⚠️  SAME PET CONFLICT: '{task1.title}' and '{task2.title}' "
+                                f"for {pet1} both start at {task1.due_time}"
+                            )
+                        else:
+                            conflicts.append(
+                                f"⚠️  OWNER CONFLICT: '{task1.title}' for {pet1} and "
+                                f"'{task2.title}' for {pet2} both start at {task1.due_time}"
+                            )
+                    else:
+                        # Overlapping time ranges
+                        end1_str = minutes_to_time(end1)
+                        end2_str = minutes_to_time(end2)
+
+                        if same_pet:
+                            conflicts.append(
+                                f"⚠️  SAME PET OVERLAP: '{task1.title}' ({task1.due_time}-{end1_str}) "
+                                f"and '{task2.title}' ({task2.due_time}-{end2_str}) for {pet1} overlap"
+                            )
+                        else:
+                            conflicts.append(
+                                f"⚠️  OWNER OVERLAP: '{task1.title}' for {pet1} ({task1.due_time}-{end1_str}) "
+                                f"and '{task2.title}' for {pet2} ({task2.due_time}-{end2_str}) overlap"
+                            )
+
+        return conflicts
+
+    def complete_task(self, pet_name: str, task_id: str) -> Optional[Task]:
+        """Mark a task as complete and auto-create next occurrence if recurring.
+
+        Args:
+            pet_name: Name of the pet this task belongs to
+            task_id: ID of the task to complete
+
+        Returns:
+            The new task instance if recurring (daily/weekly), None otherwise
+        """
+        pet = self.owner.get_pet(pet_name)
+        if not pet:
+            raise ValueError(f"Pet '{pet_name}' not found")
+
+        # Find the task
+        task_to_complete = None
+        for task in pet.tasks:
+            if task.id == task_id:
+                task_to_complete = task
+                break
+
+        if not task_to_complete:
+            raise ValueError(f"Task with ID '{task_id}' not found for pet '{pet_name}'")
+
+        # Mark the task as complete
+        task_to_complete.mark_complete()
+
+        # Auto-create next occurrence for recurring tasks
+        if task_to_complete.frequency in ["daily", "weekly"]:
+            new_task = Task(
+                title=task_to_complete.title,
+                category=task_to_complete.category,
+                duration_minutes=task_to_complete.duration_minutes,
+                priority=task_to_complete.priority,
+                due_time=task_to_complete.due_time,
+                frequency=task_to_complete.frequency,
+                completed=False
+            )
+            pet.add_task(new_task)
+            return new_task
+
+        return None

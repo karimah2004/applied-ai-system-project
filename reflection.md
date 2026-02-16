@@ -24,13 +24,13 @@ Yes I made a change clarifying the relationship between pets and the tasks. Task
 
 **a. Constraints and priorities**
 
-- What constraints does your scheduler consider (for example: time, priority, preferences)?
-- How did you decide which constraints mattered most?
+- The scheduler considers: (1) time budget (owner's available minutes), (2) task priority (1-5 scale), and (3) task timing (due_time vs flexible). Priority was chosen as the most important because health/safety tasks (medication, feeding) must take precedence over optional activities.
+- I prioritized simplicity and safety: the scheduler uses a greedy approach that guarantees high-priority tasks are scheduled first, even if this doesn't always maximize the total number of tasks completed.
 
 **b. Tradeoffs**
 
-- Describe one tradeoff your scheduler makes.
-- Why is that tradeoff reasonable for this scenario?
+- **Tradeoff**: The scheduler uses a greedy algorithm (sorts by priority, adds tasks until time runs out) rather than optimal bin-packing. This can waste time - for example, with 60 min available and tasks of 50 min (priority 5), 30 min (priority 4), and 25 min (priority 3), it only schedules the 50-min task instead of the optimal 30+25 min combination.
+- **Why reasonable**: For pet care, missing a high-priority medication is worse than missing lower-priority playtime. The greedy approach is simple, predictable, and prioritizes safety over efficiency - which is the right choice for caring for pets.
 
 ---
 
