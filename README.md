@@ -27,21 +27,29 @@ Your final app should:
 PawPal+ includes several algorithmic improvements to help pet owners manage their day more efficiently:
 
 ### Lambda-Based Sorting & Filtering
+
 - **Smart time sorting**: Tasks are sorted using lambda functions that handle HH:MM time strings, automatically placing flexible tasks at the end
 - **Priority-first scheduling**: High-priority health tasks (medication, feeding) are guaranteed to be scheduled before lower-priority activities
 - **Flexible filtering**: Filter tasks by pet name and completion status using efficient lambda-based filters
 
 ### Recurring Task Management
+
 - **Auto-creation**: When you complete a daily or weekly task, the system automatically creates the next occurrence
 - **No manual re-entry**: Never forget to add tomorrow's feeding or medication tasks again
 
 ### Enhanced Conflict Detection
+
 - **Exact time conflicts**: Detects when two tasks start at the same time (e.g., both pets need feeding at 7:30 AM)
 - **Overlapping time ranges**: Considers task duration to catch overlaps (e.g., Luna's playtime 7:50-8:15 overlaps with Mochi's walk 8:00-8:30)
 - **Pet context**: Distinguishes between same-pet conflicts and owner conflicts (can't be in two places at once)
 - **Detailed messages**: Shows which pets are affected and the exact time ranges involved
 
 These features help busy pet owners avoid scheduling impossible tasks and ensure critical care activities are never missed.
+
+python -m pytest
+My tests cover conflict detection, sorting correctness, reccurence logic, task filtering and CRUD operations like error handling.
+
+Confidence level- 4/5.
 
 ## Getting started
 
