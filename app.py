@@ -125,76 +125,251 @@ if st.button("Add Task"):
         pet.add_task(new_task)
         st.success(f"✓ Added '{task_title}' to {pet.name}'s tasks!")
 
-# Show all tasks for current pet
+# Show all tasks with sorting and filtering
 pet = st.session_state.owner.get_pet(st.session_state.current_pet)
 if pet and pet.tasks:
-    st.write(f"**Tasks for {pet.name}:**")
-    task_data = []
-    for task in pet.tasks:
-        task_data.append({
-            "Title": task.title,
-            "Category": task.category,
-            "Duration": f"{task.duration_minutes} min",
-            "Priority": task.priority,
-            "Due Time": task.due_time or "flexible",
-            "Completed": "✓" if task.completed else ""
-        })
-    st.table(task_data)
+    # Create an expander for better organization
+    with st.expander(f"📋 **{pet.name}'s Task List** ({len(pet.tasks)} total tasks)", expanded=True):
+
+        # Add sorting and filtering controls
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            sort_enabled = st.checkbox("🔄 Sort by priority & time", value=True)
+        with col2:
+            filter_completed = st.selectbox(
+                "🔍 Filter:",
+                ["All tasks", "Only incomplete", "Only completed"]
+            )
+        with col3:
+            if st.button("✅ Mark all complete", use_container_width=True):
+                for task in pet.tasks:
+                    task.completed = True
+                st.success(f"All tasks for {pet.name} marked complete!")
+                st.rerun()
+
+        st.divider()
+
+        # Create a scheduler to use its methods
+        scheduler = Scheduler(st.session_state.owner)
+
+        # Apply filtering
+        if filter_completed == "Only incomplete":
+            filtered_tasks = scheduler.filter_tasks(pet_name=pet.name, completed=False)
+        elif filter_completed == "Only completed":
+            filtered_tasks = scheduler.filter_tasks(pet_name=pet.name, completed=True)
+        else:
+            filtered_tasks = scheduler.filter_tasks(pet_name=pet.name, completed=None)
+
+        # Apply sorting
+        if sort_enabled:
+            display_tasks = scheduler.sort_tasks(filtered_tasks)
+        else:
+            display_tasks = filtered_tasks
+
+        # Display tasks with professional formatting
+        if display_tasks:
+            # Show filter results
+            if len(display_tasks) != len(pet.tasks):
+                st.info(f"📊 Showing **{len(display_tasks)}** of **{len(pet.tasks)}** tasks")
+
+            # Create DataFrame for better display
+            task_data = []
+            for task in display_tasks:
+                task_data.append({
+                    "Status": "✅" if task.completed else "⏳",
+                    "Task": task.title,
+                    "Category": task.category.capitalize(),
+                    "Priority": "⭐" * task.priority,
+                    "Duration": f"{task.duration_minutes} min",
+                    "Due Time": task.due_time or "Flexible",
+                    "Frequency": task.frequency.capitalize()
+                })
+
+            # Display as interactive dataframe
+            st.dataframe(
+                task_data,
+                use_container_width=True,
+                hide_index=True,
+                column_config={
+                    "Status": st.column_config.TextColumn("Status", width="small"),
+                    "Task": st.column_config.TextColumn("Task", width="medium"),
+                    "Priority": st.column_config.TextColumn("Priority", width="small"),
+                }
+            )
+
+            # Show quick stats
+            completed_count = sum(1 for t in display_tasks if t.completed)
+            total_time = sum(t.duration_minutes for t in display_tasks)
+
+            col1, col2, col3 = st.columns(3)
+            with col1:
+                st.metric("Completed", f"{completed_count}/{len(display_tasks)}")
+            with col2:
+                st.metric("Total Time", f"{total_time} min")
+            with col3:
+                avg_priority = sum(t.priority for t in display_tasks) / len(display_tasks)
+                st.metric("Avg Priority", f"{avg_priority:.1f}/5")
+
+        else:
+            st.warning(f"⚠️ No tasks match the filter: **{filter_completed}**")
+
+st.divider()
+
+# === VIEW ALL TASKS (FILTERING DEMO) ===
+st.subheader("🔍 Task Overview (All Pets)")
+
+# Check if there are any tasks
+total_tasks = sum(len(p.tasks) for p in st.session_state.owner.pets)
+if total_tasks == 0:
+    st.info("Add some tasks first to view the overview!")
+else:
+    scheduler = Scheduler(st.session_state.owner)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        view_pet = st.selectbox(
+            "Filter by pet:",
+            ["All pets"] + [p.name for p in st.session_state.owner.pets]
+        )
+    with col2:
+        view_status = st.selectbox(
+            "Filter by status:",
+            ["All statuses", "Incomplete only", "Completed only"],
+            key="overview_filter"
+        )
+
+    # Apply filters
+    pet_filter = None if view_pet == "All pets" else view_pet
+
+    if view_status == "Incomplete only":
+        status_filter = False
+    elif view_status == "Completed only":
+        status_filter = True
+    else:
+        status_filter = None
+
+    filtered_overview = scheduler.filter_tasks(pet_name=pet_filter, completed=status_filter)
+    sorted_overview = scheduler.sort_tasks(filtered_overview)
+
+    # Display filtered tasks
+    if sorted_overview:
+        st.write(f"**Showing {len(sorted_overview)} task(s)** (sorted by priority & time)")
+        for idx, task in enumerate(sorted_overview):
+            # Find which pet owns this task
+            task_pet = next((p.name for p in st.session_state.owner.pets if task in p.tasks), "Unknown")
+
+            with st.container(border=True):
+                col1, col2, col3, col4, col5 = st.columns([3, 2, 2, 1, 1])
+                with col1:
+                    status_icon = "✅" if task.completed else "⏳"
+                    st.write(f"{status_icon} **{task.title}**")
+                with col2:
+                    st.write(f"🐾 {task_pet}")
+                with col3:
+                    st.write(f"{'⭐' * task.priority} {task.category}")
+                with col4:
+                    st.write(f"⏰ {task.due_time or 'flexible'}")
+                with col5:
+                    if st.button("✓" if not task.completed else "↺", key=f"toggle_{idx}"):
+                        task.completed = not task.completed
+                        st.rerun()
+    else:
+        st.info("No tasks match the current filters.")
 
 st.divider()
 
 # === SCHEDULE GENERATION ===
 st.subheader("4️⃣ Generate Schedule")
 
-# Check if there are any tasks
-total_tasks = sum(len(p.tasks) for p in st.session_state.owner.pets)
+st.write(f"📊 Total tasks across all pets: **{total_tasks}**")
+
 if total_tasks == 0:
     st.info("Add some tasks first to generate a schedule!")
     st.stop()
 
-st.write(f"📊 Total tasks across all pets: **{total_tasks}**")
+col1, col2 = st.columns([3, 1])
+with col1:
+    schedule_button = st.button("🗓️ Generate Today's Schedule", type="primary", use_container_width=True)
+with col2:
+    show_all_tasks = st.checkbox("Show all pets", value=True)
 
-if st.button("🗓️ Generate Today's Schedule", type="primary"):
+if schedule_button:
     # Create scheduler and generate plan
     scheduler = Scheduler(st.session_state.owner)
     schedule = scheduler.generate_plan(date="2026-02-15")
 
     st.success(f"✅ Schedule generated for {schedule.date}")
 
+    # Alert about conflicts upfront if they exist
+    if schedule.conflicts:
+        st.error(f"🚨 {len(schedule.conflicts)} conflict(s) detected! Review warnings below.")
+
     # Display scheduled tasks
     if schedule.scheduled_tasks:
-        st.subheader("✓ Scheduled Tasks")
-        st.write(f"**Total time: {schedule.total_duration}/{st.session_state.owner.available_minutes} minutes** ({int(schedule.total_duration/st.session_state.owner.available_minutes*100)}% utilization)")
+        st.subheader("📅 Scheduled Tasks")
 
+        # Utilization metrics
+        utilization = int(schedule.total_duration/st.session_state.owner.available_minutes*100)
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Total Duration", f"{schedule.total_duration} min")
+        with col2:
+            st.metric("Available Time", f"{st.session_state.owner.available_minutes} min")
+        with col3:
+            color = "🟢" if utilization < 80 else "🟡" if utilization < 100 else "🔴"
+            st.metric("Utilization", f"{color} {utilization}%")
+
+        st.write("")  # spacing
+
+        # Display tasks in timeline format
         for st_task in schedule.scheduled_tasks:
-            time_display = st_task.scheduled_time if st_task.scheduled_time != "flexible" else "Anytime"
-            with st.container():
+            time_display = st_task.scheduled_time if st_task.scheduled_time != "flexible" else "⏰ Flexible"
+            priority_stars = "⭐" * st_task.task.priority
+
+            # Check if this task is involved in a conflict
+            has_conflict = any(st_task.task.title in conflict for conflict in schedule.conflicts)
+            border_color = "red" if has_conflict else "blue"
+
+            with st.container(border=True):
                 col1, col2, col3, col4 = st.columns([2, 3, 2, 1])
                 with col1:
                     st.write(f"**{time_display}**")
+                    if has_conflict:
+                        st.caption("⚠️ Conflict!")
                 with col2:
-                    st.write(f"{st_task.task.title}")
+                    st.write(f"**{st_task.task.title}**")
+                    st.caption(f"{priority_stars} Priority {st_task.task.priority}")
                 with col3:
-                    st.write(f"*{st_task.pet_name}* • {st_task.task.category}")
+                    st.write(f"🐾 *{st_task.pet_name}*")
+                    st.caption(f"📂 {st_task.task.category}")
                 with col4:
-                    st.write(f"{st_task.task.duration_minutes} min")
+                    st.write(f"⏱️ {st_task.task.duration_minutes} min")
+
         st.divider()
 
-    # Display conflicts
+    # Display conflicts with enhanced formatting
     if schedule.conflicts:
-        st.subheader("⚠️ Scheduling Conflicts")
-        for conflict in schedule.conflicts:
-            st.warning(conflict)
+        st.subheader("⚠️ Scheduling Conflicts Detected")
+        st.caption("These tasks overlap in time. Consider adjusting schedules or priorities.")
+        for i, conflict in enumerate(schedule.conflicts, 1):
+            st.error(f"**Conflict {i}:** {conflict}")
         st.divider()
 
     # Display unscheduled tasks
     if schedule.unscheduled_tasks:
-        st.subheader("❌ Unscheduled Tasks (didn't fit in available time)")
+        st.subheader("❌ Unscheduled Tasks")
+        st.caption("These tasks didn't fit within your available time. Consider extending available time or lowering priority.")
         for task, pet_name in schedule.unscheduled_tasks:
-            st.write(f"- **{task.title}** for {pet_name} ({task.duration_minutes} min, priority {task.priority})")
+            st.warning(f"**{task.title}** for {pet_name} • {task.duration_minutes} min • Priority: {'⭐' * task.priority}")
 
-    # Summary
+    # Summary dashboard
     st.divider()
-    st.metric("Tasks Scheduled", len(schedule.scheduled_tasks))
-    st.metric("Tasks Unscheduled", len(schedule.unscheduled_tasks))
-    st.metric("Conflicts Detected", len(schedule.conflicts))
+    st.subheader("📊 Schedule Summary")
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.metric("✅ Tasks Scheduled", len(schedule.scheduled_tasks))
+    with col2:
+        st.metric("❌ Tasks Unscheduled", len(schedule.unscheduled_tasks))
+    with col3:
+        conflict_status = "🚨" if schedule.conflicts else "✓"
+        st.metric("⚠️ Conflicts", f"{conflict_status} {len(schedule.conflicts)}")
