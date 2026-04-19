@@ -1,4 +1,4 @@
-import streamlit as st
+import streamlit as st # type: ignore
 from pawpal_system import Task, Pet, Owner, Scheduler, Schedule, ScheduledTask
 
 st.set_page_config(page_title="PawPal+", page_icon="🐾", layout="centered")
