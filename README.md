@@ -106,9 +106,10 @@ pytest tests/test_rag.py -v
 **Question:** How much exercise does my corgi need?
 
 **AI Response:**
+
 > Based on the Corgi breed profile, your Corgi needs 45–60 minutes of daily exercise at a moderate to high intensity. Good activities include walks, fetch, and agility — however, avoid encouraging excessive jumping, as Corgis are prone to intervertebral disc disease (IVDD) due to their long spine and short legs. Despite their small size, they are herding dogs with real endurance.
 >
-> *Sources: Exercise Needs, Common Health Issues, Temperament and Training Notes — Corgi breed profile*
+> _Sources: Exercise Needs, Common Health Issues, Temperament and Training Notes — Corgi breed profile_
 
 ---
 
@@ -118,9 +119,10 @@ pytest tests/test_rag.py -v
 **Question:** What health issues should I watch out for?
 
 **AI Response:**
+
 > French Bulldogs are a brachycephalic breed, meaning their flat face creates breathing challenges. Watch for: labored breathing or blue-tinged gums (BOAS — seek emergency vet care immediately), back pain or hind-leg weakness (IVDD), redness or odor in facial skin folds (dermatitis), and eye redness or squinting (corneal ulcers). Gasping for breath or sudden collapse are emergencies — call your vet right away.
 >
-> *Sources: Common Health Issues, Grooming Requirements, Age-Specific Care — French Bulldog breed profile*
+> _Sources: Common Health Issues, Grooming Requirements, Age-Specific Care — French Bulldog breed profile_
 >
 > ⚠️ **Important:** PawPal+ provides general breed guidance only. It cannot diagnose medical conditions or replace professional veterinary advice. If your pet shows signs of illness, injury, or distress, please contact your veterinarian immediately.
 
@@ -132,11 +134,12 @@ pytest tests/test_rag.py -v
 **Question:** How much should I feed this breed?
 
 **AI Response:**
+
 > ⚠️ **'Xoloitzcuintli' is not in our breed database yet.**
 >
 > I don't have specific dietary data for this breed. Generally, most medium-sized dogs do well on 1.5–2.5 cups of high-quality dry kibble split into two meals per day, adjusted for age and activity level. For breed-specific guidance, I'd strongly recommend consulting your veterinarian or a reputable breed association, as nutritional needs can vary significantly.
 >
-> *For breed-specific guidance, please consult your veterinarian or a reputable breed association.*
+> _For breed-specific guidance, please consult your veterinarian or a reputable breed association._
 
 ---
 
@@ -163,13 +166,16 @@ Markdown files are human-readable, easy to edit, version-controlled with git, an
 
 Tests live in `tests/test_rag.py` and cover five areas:
 
-| Area | What was tested | Result |
-|---|---|---|
+| Area                     | What was tested                                                                                               | Result |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------- | ------ |
 | Breed-specific grounding | Known breeds return data containing specific facts (e.g., "60" or "90" minutes for Golden Retriever exercise) | Passed |
-| Unknown breed fallback | Unrecognized breeds trigger a graceful fallback with no crash and no hallucinated facts | Passed |
-| Consistency | Same question asked 2–3 times returns answers containing the same key facts | Passed |
-| Task-breed alignment | Bulldogs get ≤40 min exercise; German Shepherds get ≥45 min; Persians get grooming tasks | Passed |
-| Guardrails | Medical/diagnosis queries are refused; vet referral is included in health-related answers | Passed |
+| Unknown breed fallback   | Unrecognized breeds trigger a graceful fallback with no crash and no hallucinated facts                       | Passed |
+| Consistency              | Same question asked 2–3 times returns answers containing the same key facts                                   | Passed |
+| Task-breed alignment     | Bulldogs get ≤40 min exercise; German Shepherds get ≥45 min; Persians get grooming tasks                      | Passed |
+| Guardrails               | Medical/diagnosis queries are refused; vet referral is included in health-related answers                     | Passed |
+
+Manual testing was completed- HUMAN VALIDATION
+Automated unit tests
 
 **Guardrail example — medical query refused:**
 
@@ -196,7 +202,7 @@ The guardrail fires before the LLM is even called — the keyword check in `rag_
 I used Claude Code throughout this project for design brainstorming, implementation, debugging, and refactoring. The most useful prompts were specific and directive — "build a TF-IDF retrieval function that scores markdown sections against a query" produced better results than "help me build RAG." I also used AI to generate the 14 breed knowledge base files in parallel, which would have taken hours to write manually.
 
 **A helpful AI suggestion I accepted:**
-When building the guardrail system, the AI suggested implementing medical query detection as a Python keyword check *before* the LLM call, rather than relying on a system prompt instruction to the model. This was the right call — a small model like `gemma-3-1b-it` might not consistently follow a "don't diagnose" instruction in the prompt, but a Python `if` statement never fails. This made the safety behavior deterministic and testable.
+When building the guardrail system, the AI suggested implementing medical query detection as a Python keyword check _before_ the LLM call, rather than relying on a system prompt instruction to the model. This was the right call — a small model like `gemma-3-1b-it` might not consistently follow a "don't diagnose" instruction in the prompt, but a Python `if` statement never fails. This made the safety behavior deterministic and testable.
 
 **A flawed AI suggestion I rejected:**
 During development, the AI attempted to rewrite the entire `app.py` file at once when I asked for a UI change. I rejected this and instead asked it to make changes section by section so I could validate each one before moving on. Accepting a full rewrite blindly would have made it harder to catch regressions and understand what changed and why — the same lesson from the original project applies here: you have to understand what's being added, not just accept it.

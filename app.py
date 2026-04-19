@@ -92,27 +92,18 @@ st.markdown(
 # Initialize session state
 if "owner" not in st.session_state:
     st.session_state.owner = None
-if "current_pet" not in st.session_state:
-    st.session_state.current_pet = None
 
 st.divider()
 
 # === OWNER SETUP ===
 st.subheader("1️⃣ Owner Profile")
 
-col1, col2 = st.columns(2)
-with col1:
-    owner_name = st.text_input("Owner name", value="Jordan")
-with col2:
-    available_time = st.number_input(
-        "Available time today (minutes)",
-        min_value=30, max_value=480, value=120
-    )
+owner_name = st.text_input("Owner name", value="Jordan")
 
 if st.button("Create/Update Owner"):
     st.session_state.owner = Owner(
         name=owner_name,
-        available_minutes=available_time,
+        available_minutes=120,
         preferences={"priority_focus": "health_first"}
     )
     st.success(f"✓ Owner '{owner_name}' created!")
@@ -120,7 +111,6 @@ if st.button("Create/Update Owner"):
 if st.session_state.owner:
     st.info(
         f"👤 **{st.session_state.owner.name}** | "
-        f"{st.session_state.owner.available_minutes} min available | "
         f"{len(st.session_state.owner.pets)} pet(s)"
     )
 else:
@@ -166,11 +156,7 @@ if st.button("Add Pet"):
     except ValueError as e:
         st.error(f"Error: {e}")
 
-if st.session_state.owner.pets:
-    pet_names = [p.name for p in st.session_state.owner.pets]
-    selected_pet = st.selectbox("Selected pet", pet_names)
-    st.session_state.current_pet = selected_pet
-else:
+if not st.session_state.owner.pets:
     st.info("No pets yet. Add your first pet above!")
     st.stop()
 
@@ -179,19 +165,11 @@ st.divider()
 # === BREED ADVISOR ===
 st.subheader("🧠 AI Breed Advisor")
 
-pet = st.session_state.owner.get_pet(st.session_state.current_pet)
-breed_for_qa = ""
-if pet and pet.notes and "Breed:" in pet.notes:
-    for part in pet.notes.split("|"):
-        if "Breed:" in part:
-            breed_for_qa = part.replace("Breed:", "").strip()
-
 col1, col2 = st.columns([2, 3])
 with col1:
     qa_breed = st.selectbox(
         "Breed to ask about",
         options=[""] + supported_breeds,
-        index=([""] + supported_breeds).index(breed_for_qa) if breed_for_qa in supported_breeds else 0,
         format_func=lambda x: "Select a breed..." if x == "" else x,
         key="qa_breed"
     )
