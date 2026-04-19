@@ -171,6 +171,15 @@ Tests live in `tests/test_rag.py` and cover five areas:
 | Task-breed alignment | Bulldogs get ≤40 min exercise; German Shepherds get ≥45 min; Persians get grooming tasks | Passed |
 | Guardrails | Medical/diagnosis queries are refused; vet referral is included in health-related answers | Passed |
 
+**Guardrail example — medical query refused:**
+
+> **Input:** "Can you diagnose my dog's limp?"
+>
+> **Output:** "I'm not able to provide veterinary diagnoses or prescribe treatments. Please contact your veterinarian or an emergency animal hospital immediately.
+> ⚠️ **Important:** PawPal+ provides general breed guidance only. It cannot diagnose medical conditions or replace professional veterinary advice."
+
+The guardrail fires before the LLM is even called — the keyword check in `rag_engine.py` catches terms like "diagnose," "prescribe," and "medication dosage" and returns a hardcoded refusal instantly.
+
 **What worked well:** The TF-IDF retrieval reliably surfaces the right sections for direct questions ("how much exercise," "what should I feed"). The guardrail keyword detection is simple but effective for obvious emergency queries.
 
 **What didn't work perfectly:** The smaller Gemini model sometimes produces shorter answers than ideal, and can repeat phrasing from the retrieved context verbatim rather than rephrasing it. The consistency tests occasionally show slight variation in phrasing across runs, though the factual content remains stable.
@@ -180,6 +189,24 @@ Tests live in `tests/test_rag.py` and cover five areas:
 ---
 
 ## Reflection
+
+### AI Collaboration
+
+**How I used AI during development:**
+I used Claude Code throughout this project for design brainstorming, implementation, debugging, and refactoring. The most useful prompts were specific and directive — "build a TF-IDF retrieval function that scores markdown sections against a query" produced better results than "help me build RAG." I also used AI to generate the 14 breed knowledge base files in parallel, which would have taken hours to write manually.
+
+**A helpful AI suggestion I accepted:**
+When building the guardrail system, the AI suggested implementing medical query detection as a Python keyword check *before* the LLM call, rather than relying on a system prompt instruction to the model. This was the right call — a small model like `gemma-3-1b-it` might not consistently follow a "don't diagnose" instruction in the prompt, but a Python `if` statement never fails. This made the safety behavior deterministic and testable.
+
+**A flawed AI suggestion I rejected:**
+During development, the AI attempted to rewrite the entire `app.py` file at once when I asked for a UI change. I rejected this and instead asked it to make changes section by section so I could validate each one before moving on. Accepting a full rewrite blindly would have made it harder to catch regressions and understand what changed and why — the same lesson from the original project applies here: you have to understand what's being added, not just accept it.
+
+**System limitations and future improvements:**
+The current system has no memory between sessions — every page refresh resets the owner and pet data. A real version would persist data to a database. The breed knowledge base is also limited to 14 breeds; a production system would need broader coverage or a way to fetch breed data dynamically. Finally, `gemma-3-1b-it` sometimes produces repetitive or clipped responses — upgrading to a larger model when budget allows would meaningfully improve answer quality.
+
+---
+
+### Design and Problem-Solving
 
 Building this extension taught me that AI systems are most reliable when the model's job is constrained. In the original PawPal+, the scheduler was entirely rule-based — deterministic and easy to test. Adding an LLM introduced non-determinism: the same question can produce slightly different wording each time. RAG helped bridge that gap by ensuring the factual content was fixed and the model only had to structure it.
 
