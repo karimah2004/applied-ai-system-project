@@ -4,8 +4,7 @@ Generates breed-appropriate task suggestions and answers free-form questions.
 """
 
 import json
-import anthropic
-from rag_engine import retrieve_chunks, answer_breed_question, MEDICAL_DISCLAIMER
+from rag_engine import retrieve_chunks, answer_breed_question, MEDICAL_DISCLAIMER, _model
 from pawpal_system import Task, Pet
 
 
@@ -183,22 +182,13 @@ def _ai_generated_tasks(breed_name: str, age_years: float) -> list[dict]:
         "Return ONLY valid JSON array, no explanation."
     )
 
-    client = anthropic.Anthropic()
-    response = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=512,
-        system=system_prompt,
-        messages=[{
-            "role": "user",
-            "content": (
-                f"Breed: {breed_name}\nAge: {age_years} years\n\n"
-                f"Breed context (if available):\n{context}"
-            )
-        }],
+    response = _model.generate_content(
+        f"{system_prompt}\n\nBreed: {breed_name}\nAge: {age_years} years\n\n"
+        f"Breed context (if available):\n{context}"
     )
 
     try:
-        text = response.content[0].text.strip()
+        text = response.text.strip()
         text = text.replace("```json", "").replace("```", "").strip()
         tasks = json.loads(text)
         return tasks if isinstance(tasks, list) else []

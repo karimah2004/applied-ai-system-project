@@ -9,7 +9,10 @@ import math
 from pathlib import Path
 from collections import Counter
 
-import anthropic
+import google.generativeai as genai
+
+genai.configure(api_key=os.environ["GEMINI_API_KEY"])
+_model = genai.GenerativeModel("gemma-3-1b-it")
 
 KNOWLEDGE_DIR = Path(__file__).parent / "breed_knowledge"
 
@@ -191,15 +194,8 @@ def answer_breed_question(breed_name: str, question: str) -> str:
         f"User question: {question}"
     )
 
-    client = anthropic.Anthropic()
-    response = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=1024,
-        system=system_prompt,
-        messages=[{"role": "user", "content": user_prompt}],
-    )
-
-    answer = response.content[0].text
+    response = _model.generate_content(f"{system_prompt}\n\n{user_prompt}")
+    answer = response.text
 
     cited_headers = [line.replace("**", "").replace(":", "").strip()
                      for line in context.splitlines() if line.startswith("**")]
@@ -222,21 +218,12 @@ def _fallback_answer(breed_name: str, question: str) -> str:
         "Recommend consulting a veterinarian or breed-specific resources."
     )
 
-    client = anthropic.Anthropic()
-    response = client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=512,
-        system=system_prompt,
-        messages=[{
-            "role": "user",
-            "content": (
-                f"I don't have specific information about the '{breed_name}' breed in my knowledge base. "
-                f"The user asked: {question}"
-            )
-        }],
+    response = _model.generate_content(
+        f"{system_prompt}\n\n"
+        f"I don't have specific information about the '{breed_name}' breed in my knowledge base. "
+        f"The user asked: {question}"
     )
-
-    answer = response.content[0].text
+    answer = response.text
     return (
         f"⚠️ **'{breed_name}' is not in our breed database yet.**\n\n"
         + answer

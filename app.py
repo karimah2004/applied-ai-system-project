@@ -1,18 +1,14 @@
 import streamlit as st # type: ignore
-from pawpal_system import Task, Pet, Owner, Scheduler, Schedule, ScheduledTask
-from ai_advisor import suggest_tasks_for_breed, answer_question
-from rag_engine import list_supported_breeds
+from pawpal_system import Pet, Owner
+from ai_advisor import answer_question
+from rag_engine import list_supported_breeds, retrieve_chunks
 
 st.set_page_config(page_title="PawPal+", page_icon="🐾", layout="centered")
 
 st.title("🐾 PawPal+")
-
 st.markdown(
-    """
-**PawPal+** is an AI-powered pet care assistant. It uses breed-specific knowledge
-to automatically suggest tasks, answer care questions, and flag health concerns —
-all grounded in real breed data via Retrieval-Augmented Generation (RAG).
-"""
+    "**PawPal+** is an AI-powered pet care assistant. "
+    "Ask breed-specific care questions and get answers grounded in real breed data."
 )
 
 # Initialize session state
@@ -20,8 +16,6 @@ if "owner" not in st.session_state:
     st.session_state.owner = None
 if "current_pet" not in st.session_state:
     st.session_state.current_pet = None
-if "pending_suggestions" not in st.session_state:
-    st.session_state.pending_suggestions = {}
 
 st.divider()
 
@@ -34,9 +28,7 @@ with col1:
 with col2:
     available_time = st.number_input(
         "Available time today (minutes)",
-        min_value=30,
-        max_value=480,
-        value=120
+        min_value=30, max_value=480, value=120
     )
 
 if st.button("Create/Update Owner"):
@@ -45,18 +37,22 @@ if st.button("Create/Update Owner"):
         available_minutes=available_time,
         preferences={"priority_focus": "health_first"}
     )
-    st.success(f"✓ Owner '{owner_name}' created with {available_time} minutes available!")
+    st.success(f"✓ Owner '{owner_name}' created!")
 
 if st.session_state.owner:
-    st.info(f"👤 Current owner: **{st.session_state.owner.name}** | {st.session_state.owner.available_minutes} min available | {len(st.session_state.owner.pets)} pet(s)")
+    st.info(
+        f"👤 **{st.session_state.owner.name}** | "
+        f"{st.session_state.owner.available_minutes} min available | "
+        f"{len(st.session_state.owner.pets)} pet(s)"
+    )
 else:
     st.warning("⚠️ Create an owner profile to continue")
     st.stop()
 
 st.divider()
 
-# === PET MANAGEMENT ===
-st.subheader("2️⃣ Add Pets")
+# === ADD PET ===
+st.subheader("2️⃣ Add a Pet")
 
 supported_breeds = list_supported_breeds()
 
@@ -70,16 +66,13 @@ with col3:
 
 col1, col2 = st.columns(2)
 with col1:
-    breed_input = st.text_input(
-        "Breed (optional — unlocks AI suggestions)",
-        value="",
-        placeholder="e.g. Golden Retriever, Siamese"
+    breed_input = st.selectbox(
+        "Breed",
+        options=[""] + supported_breeds,
+        format_func=lambda x: "Select a breed..." if x == "" else x,
     )
 with col2:
     pet_notes = st.text_input("Notes", value="Energetic and friendly")
-
-with st.expander("📋 Supported breeds for AI suggestions"):
-    st.write(", ".join(supported_breeds))
 
 if st.button("Add Pet"):
     try:
@@ -91,100 +84,22 @@ if st.button("Add Pet"):
         )
         st.session_state.owner.add_pet(new_pet)
         st.session_state.current_pet = pet_name
-
-        if breed_input.strip():
-            with st.spinner(f"Generating AI task suggestions for {breed_input}..."):
-                suggestions = suggest_tasks_for_breed(breed_input.strip(), age)
-                if suggestions:
-                    st.session_state.pending_suggestions[pet_name] = {
-                        "breed": breed_input.strip(),
-                        "suggestions": suggestions,
-                    }
-                    st.success(f"✓ Added {pet_name} the {species}! AI generated {len(suggestions)} task suggestions — review them below.")
-                else:
-                    st.success(f"✓ Added {pet_name} the {species}! (No AI suggestions available for this breed.)")
-        else:
-            st.success(f"✓ Added {pet_name} the {species}!")
+        st.success(f"✓ Added {pet_name} the {species}!")
     except ValueError as e:
         st.error(f"Error: {e}")
 
-# Display existing pets
 if st.session_state.owner.pets:
-    st.write("**Your Pets:**")
     pet_names = [p.name for p in st.session_state.owner.pets]
-    selected_pet = st.selectbox("Select pet to add tasks", pet_names)
+    selected_pet = st.selectbox("Selected pet", pet_names)
     st.session_state.current_pet = selected_pet
-
-    pet = st.session_state.owner.get_pet(selected_pet)
-    breed_display = ""
-    if pet.notes and "Breed:" in pet.notes:
-        for part in pet.notes.split("|"):
-            if "Breed:" in part:
-                breed_display = part.strip()
-    st.caption(f"{pet.species.capitalize()}, {pet.age_years} years old — {pet.notes.split('|')[0].strip()} {breed_display}")
 else:
     st.info("No pets yet. Add your first pet above!")
     st.stop()
 
 st.divider()
 
-# === AI TASK SUGGESTIONS ===
-current_pet_name = st.session_state.current_pet
-if current_pet_name and current_pet_name in st.session_state.pending_suggestions:
-    pending = st.session_state.pending_suggestions[current_pet_name]
-    breed = pending["breed"]
-    suggestions = pending["suggestions"]
-
-    st.subheader(f"🤖 AI Task Suggestions for {current_pet_name} ({breed})")
-    st.caption("These suggestions are grounded in your pet's breed profile. Accept, modify, or skip each one.")
-
-    accepted_indices = []
-    modified_suggestions = []
-
-    for i, sug in enumerate(suggestions):
-        with st.container(border=True):
-            col1, col2 = st.columns([3, 1])
-            with col1:
-                st.write(f"**{sug['title']}**")
-                st.caption(
-                    f"Category: {sug['category']} | Duration: {sug['duration_minutes']} min | "
-                    f"Priority: {'⭐' * sug['priority']} | Frequency: {sug['frequency']} | "
-                    f"Time: {sug.get('due_time') or 'Flexible'}"
-                )
-            with col2:
-                accept = st.checkbox("Accept", key=f"accept_{current_pet_name}_{i}", value=True)
-                if accept:
-                    accepted_indices.append(i)
-
-    col1, col2 = st.columns(2)
-    with col1:
-        if st.button("✅ Add Accepted Tasks", type="primary"):
-            pet = st.session_state.owner.get_pet(current_pet_name)
-            added = 0
-            for i in accepted_indices:
-                sug = suggestions[i]
-                task = Task(
-                    title=sug["title"],
-                    category=sug.get("category", "enrichment"),
-                    duration_minutes=int(sug.get("duration_minutes", 15)),
-                    priority=int(sug.get("priority", 3)),
-                    due_time=sug.get("due_time"),
-                    frequency=sug.get("frequency", "daily"),
-                )
-                pet.add_task(task)
-                added += 1
-            del st.session_state.pending_suggestions[current_pet_name]
-            st.success(f"✓ Added {added} AI-suggested tasks to {current_pet_name}!")
-            st.rerun()
-    with col2:
-        if st.button("❌ Dismiss All Suggestions"):
-            del st.session_state.pending_suggestions[current_pet_name]
-            st.rerun()
-
-    st.divider()
-
-# === AI BREED ADVISOR / RAG Q&A ===
-st.subheader("🧠 Ask the AI Breed Advisor")
+# === BREED ADVISOR ===
+st.subheader("🧠 AI Breed Advisor")
 
 pet = st.session_state.owner.get_pet(st.session_state.current_pet)
 breed_for_qa = ""
@@ -195,10 +110,12 @@ if pet and pet.notes and "Breed:" in pet.notes:
 
 col1, col2 = st.columns([2, 3])
 with col1:
-    qa_breed = st.text_input(
+    qa_breed = st.selectbox(
         "Breed to ask about",
-        value=breed_for_qa,
-        placeholder="e.g. Corgi"
+        options=[""] + supported_breeds,
+        index=([""] + supported_breeds).index(breed_for_qa) if breed_for_qa in supported_breeds else 0,
+        format_func=lambda x: "Select a breed..." if x == "" else x,
+        key="qa_breed"
     )
 with col2:
     qa_question = st.text_input(
@@ -206,267 +123,55 @@ with col2:
         placeholder="How much exercise does my corgi need?"
     )
 
-if st.button("Ask AI Advisor", type="primary"):
-    if not qa_breed.strip():
-        st.warning("Please enter a breed name.")
+if st.button("Ask", type="primary"):
+    if not qa_breed:
+        st.warning("Please select a breed.")
     elif not qa_question.strip():
         st.warning("Please enter a question.")
     else:
-        with st.spinner("Retrieving breed knowledge and generating answer..."):
-            answer = answer_question(qa_breed.strip(), qa_question.strip())
-        st.markdown("**AI Advisor Response:**")
+        with st.spinner("Looking up breed data..."):
+            answer = answer_question(qa_breed, qa_question.strip())
+        st.markdown("**Response:**")
         st.markdown(answer)
 
 st.divider()
 
-# === TASK MANAGEMENT ===
-st.subheader("3️⃣ Add Tasks Manually")
+# === PET SUMMARIES ===
+st.subheader("🐾 Your Pets")
 
-col1, col2 = st.columns(2)
-with col1:
-    task_title = st.text_input("Task title", value="Morning walk")
-    task_category = st.selectbox(
-        "Category",
-        ["exercise", "feeding", "health", "grooming", "enrichment", "hygiene"]
-    )
-    task_frequency = st.selectbox("Frequency", ["once", "daily", "weekly"])
-
-with col2:
-    task_duration = st.number_input("Duration (minutes)", min_value=1, max_value=240, value=20)
-    task_priority = st.slider("Priority (1=low, 5=high)", min_value=1, max_value=5, value=3)
-    task_time = st.text_input("Due time (HH:MM, or leave empty)", value="", placeholder="08:00")
-
-if st.button("Add Task"):
-    pet = st.session_state.owner.get_pet(st.session_state.current_pet)
-    if pet:
-        new_task = Task(
-            title=task_title,
-            category=task_category,
-            duration_minutes=task_duration,
-            priority=task_priority,
-            due_time=task_time if task_time else None,
-            frequency=task_frequency
-        )
-        pet.add_task(new_task)
-        st.success(f"✓ Added '{task_title}' to {pet.name}'s tasks!")
-
-# Show all tasks with sorting and filtering
-pet = st.session_state.owner.get_pet(st.session_state.current_pet)
-if pet and pet.tasks:
-    with st.expander(f"📋 **{pet.name}'s Task List** ({len(pet.tasks)} total tasks)", expanded=True):
-
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            sort_enabled = st.checkbox("🔄 Sort by priority & time", value=True)
-        with col2:
-            filter_completed = st.selectbox(
-                "🔍 Filter:",
-                ["All tasks", "Only incomplete", "Only completed"]
-            )
-        with col3:
-            if st.button("✅ Mark all complete", use_container_width=True):
-                for task in pet.tasks:
-                    task.completed = True
-                st.success(f"All tasks for {pet.name} marked complete!")
-                st.rerun()
-
-        st.divider()
-
-        scheduler = Scheduler(st.session_state.owner)
-
-        if filter_completed == "Only incomplete":
-            filtered_tasks = scheduler.filter_tasks(pet_name=pet.name, completed=False)
-        elif filter_completed == "Only completed":
-            filtered_tasks = scheduler.filter_tasks(pet_name=pet.name, completed=True)
-        else:
-            filtered_tasks = scheduler.filter_tasks(pet_name=pet.name, completed=None)
-
-        display_tasks = scheduler.sort_tasks(filtered_tasks) if sort_enabled else filtered_tasks
-
-        if display_tasks:
-            if len(display_tasks) != len(pet.tasks):
-                st.info(f"📊 Showing **{len(display_tasks)}** of **{len(pet.tasks)}** tasks")
-
-            task_data = []
-            for task in display_tasks:
-                task_data.append({
-                    "Status": "✅" if task.completed else "⏳",
-                    "Task": task.title,
-                    "Category": task.category.capitalize(),
-                    "Priority": "⭐" * task.priority,
-                    "Duration": f"{task.duration_minutes} min",
-                    "Due Time": task.due_time or "Flexible",
-                    "Frequency": task.frequency.capitalize()
-                })
-
-            st.dataframe(
-                task_data,
-                use_container_width=True,
-                hide_index=True,
-                column_config={
-                    "Status": st.column_config.TextColumn("Status", width="small"),
-                    "Task": st.column_config.TextColumn("Task", width="medium"),
-                    "Priority": st.column_config.TextColumn("Priority", width="small"),
-                }
-            )
-
-            completed_count = sum(1 for t in display_tasks if t.completed)
-            total_time = sum(t.duration_minutes for t in display_tasks)
-
-            col1, col2, col3 = st.columns(3)
-            with col1:
-                st.metric("Completed", f"{completed_count}/{len(display_tasks)}")
-            with col2:
-                st.metric("Total Time", f"{total_time} min")
-            with col3:
-                avg_priority = sum(t.priority for t in display_tasks) / len(display_tasks)
-                st.metric("Avg Priority", f"{avg_priority:.1f}/5")
-        else:
-            st.warning(f"⚠️ No tasks match the filter: **{filter_completed}**")
-
-st.divider()
-
-# === VIEW ALL TASKS ===
-st.subheader("🔍 Task Overview (All Pets)")
-
-total_tasks = sum(len(p.tasks) for p in st.session_state.owner.pets)
-if total_tasks == 0:
-    st.info("Add some tasks first to view the overview!")
+if not st.session_state.owner.pets:
+    st.info("No pets added yet.")
 else:
-    scheduler = Scheduler(st.session_state.owner)
+    for p in st.session_state.owner.pets:
+        breed = ""
+        notes_display = p.notes
+        if p.notes and "Breed:" in p.notes:
+            parts = p.notes.split("|")
+            notes_display = parts[0].strip()
+            for part in parts:
+                if "Breed:" in part:
+                    breed = part.replace("Breed:", "").strip()
 
-    col1, col2 = st.columns(2)
-    with col1:
-        view_pet = st.selectbox(
-            "Filter by pet:",
-            ["All pets"] + [p.name for p in st.session_state.owner.pets]
-        )
-    with col2:
-        view_status = st.selectbox(
-            "Filter by status:",
-            ["All statuses", "Incomplete only", "Completed only"],
-            key="overview_filter"
-        )
+        with st.container(border=True):
+            col1, col2 = st.columns([1, 3])
+            with col1:
+                icon = "🐶" if p.species == "dog" else "🐱" if p.species == "cat" else "🐾"
+                st.markdown(f"## {icon}")
+            with col2:
+                st.markdown(f"**{p.name}**")
+                st.caption(
+                    f"{p.species.capitalize()} · {p.age_years} yr{'s' if p.age_years != 1 else ''}"
+                    + (f" · {breed}" if breed else "")
+                )
+                if notes_display:
+                    st.write(notes_display)
 
-    pet_filter = None if view_pet == "All pets" else view_pet
-
-    if view_status == "Incomplete only":
-        status_filter = False
-    elif view_status == "Completed only":
-        status_filter = True
-    else:
-        status_filter = None
-
-    filtered_overview = scheduler.filter_tasks(pet_name=pet_filter, completed=status_filter)
-    sorted_overview = scheduler.sort_tasks(filtered_overview)
-
-    if sorted_overview:
-        st.write(f"**Showing {len(sorted_overview)} task(s)** (sorted by priority & time)")
-        for idx, task in enumerate(sorted_overview):
-            task_pet = next((p.name for p in st.session_state.owner.pets if task in p.tasks), "Unknown")
-
-            with st.container(border=True):
-                col1, col2, col3, col4, col5 = st.columns([3, 2, 2, 1, 1])
-                with col1:
-                    status_icon = "✅" if task.completed else "⏳"
-                    st.write(f"{status_icon} **{task.title}**")
-                with col2:
-                    st.write(f"🐾 {task_pet}")
-                with col3:
-                    st.write(f"{'⭐' * task.priority} {task.category}")
-                with col4:
-                    st.write(f"⏰ {task.due_time or 'flexible'}")
-                with col5:
-                    if st.button("✓" if not task.completed else "↺", key=f"toggle_{idx}"):
-                        task.completed = not task.completed
-                        st.rerun()
-    else:
-        st.info("No tasks match the current filters.")
-
-st.divider()
-
-# === SCHEDULE GENERATION ===
-st.subheader("4️⃣ Generate Schedule")
-
-st.write(f"📊 Total tasks across all pets: **{total_tasks}**")
-
-if total_tasks == 0:
-    st.info("Add some tasks first to generate a schedule!")
-    st.stop()
-
-col1, col2 = st.columns([3, 1])
-with col1:
-    schedule_button = st.button("🗓️ Generate Today's Schedule", type="primary", use_container_width=True)
-with col2:
-    show_all_tasks = st.checkbox("Show all pets", value=True)
-
-if schedule_button:
-    scheduler = Scheduler(st.session_state.owner)
-    schedule = scheduler.generate_plan(date="2026-04-18")
-
-    st.success(f"✅ Schedule generated for {schedule.date}")
-
-    if schedule.conflicts:
-        st.error(f"🚨 {len(schedule.conflicts)} conflict(s) detected! Review warnings below.")
-
-    if schedule.scheduled_tasks:
-        st.subheader("📅 Scheduled Tasks")
-
-        utilization = int(schedule.total_duration / st.session_state.owner.available_minutes * 100)
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            st.metric("Total Duration", f"{schedule.total_duration} min")
-        with col2:
-            st.metric("Available Time", f"{st.session_state.owner.available_minutes} min")
-        with col3:
-            color = "🟢" if utilization < 80 else "🟡" if utilization < 100 else "🔴"
-            st.metric("Utilization", f"{color} {utilization}%")
-
-        st.write("")
-
-        for st_task in schedule.scheduled_tasks:
-            time_display = st_task.scheduled_time if st_task.scheduled_time != "flexible" else "⏰ Flexible"
-            priority_stars = "⭐" * st_task.task.priority
-
-            has_conflict = any(st_task.task.title in conflict for conflict in schedule.conflicts)
-
-            with st.container(border=True):
-                col1, col2, col3, col4 = st.columns([2, 3, 2, 1])
-                with col1:
-                    st.write(f"**{time_display}**")
-                    if has_conflict:
-                        st.caption("⚠️ Conflict!")
-                with col2:
-                    st.write(f"**{st_task.task.title}**")
-                    st.caption(f"{priority_stars} Priority {st_task.task.priority}")
-                with col3:
-                    st.write(f"🐾 *{st_task.pet_name}*")
-                    st.caption(f"📂 {st_task.task.category}")
-                with col4:
-                    st.write(f"⏱️ {st_task.task.duration_minutes} min")
-
-        st.divider()
-
-    if schedule.conflicts:
-        st.subheader("⚠️ Scheduling Conflicts Detected")
-        st.caption("These tasks overlap in time. Consider adjusting schedules or priorities.")
-        for i, conflict in enumerate(schedule.conflicts, 1):
-            st.error(f"**Conflict {i}:** {conflict}")
-        st.divider()
-
-    if schedule.unscheduled_tasks:
-        st.subheader("❌ Unscheduled Tasks")
-        st.caption("These tasks didn't fit within your available time.")
-        for task, pet_name in schedule.unscheduled_tasks:
-            st.warning(f"**{task.title}** for {pet_name} • {task.duration_minutes} min • Priority: {'⭐' * task.priority}")
-
-    st.divider()
-    st.subheader("📊 Schedule Summary")
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        st.metric("✅ Tasks Scheduled", len(schedule.scheduled_tasks))
-    with col2:
-        st.metric("❌ Tasks Unscheduled", len(schedule.unscheduled_tasks))
-    with col3:
-        conflict_status = "🚨" if schedule.conflicts else "✓"
-        st.metric("⚠️ Conflicts", f"{conflict_status} {len(schedule.conflicts)}")
+            if breed:
+                with st.expander("View breed care summary"):
+                    with st.spinner("Loading breed info..."):
+                        chunks, canonical = retrieve_chunks(breed, "exercise diet grooming health age care")
+                    if chunks:
+                        for chunk in chunks:
+                            st.markdown(chunk)
+                    else:
+                        st.info("No breed data available.")
