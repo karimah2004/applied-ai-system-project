@@ -1,5 +1,7 @@
 import streamlit as st # type: ignore
 from pawpal_system import Task, Pet, Owner, Scheduler, Schedule, ScheduledTask
+from ai_advisor import suggest_tasks_for_breed, answer_question
+from rag_engine import list_supported_breeds
 
 st.set_page_config(page_title="PawPal+", page_icon="🐾", layout="centered")
 
@@ -7,8 +9,9 @@ st.title("🐾 PawPal+")
 
 st.markdown(
     """
-**PawPal+** is a pet care planning assistant. It helps you plan care tasks
-for your pet(s) based on constraints like time, priority, and preferences.
+**PawPal+** is an AI-powered pet care assistant. It uses breed-specific knowledge
+to automatically suggest tasks, answer care questions, and flag health concerns —
+all grounded in real breed data via Retrieval-Augmented Generation (RAG).
 """
 )
 
@@ -17,6 +20,8 @@ if "owner" not in st.session_state:
     st.session_state.owner = None
 if "current_pet" not in st.session_state:
     st.session_state.current_pet = None
+if "pending_suggestions" not in st.session_state:
+    st.session_state.pending_suggestions = {}
 
 st.divider()
 
@@ -42,7 +47,6 @@ if st.button("Create/Update Owner"):
     )
     st.success(f"✓ Owner '{owner_name}' created with {available_time} minutes available!")
 
-# Show current owner
 if st.session_state.owner:
     st.info(f"👤 Current owner: **{st.session_state.owner.name}** | {st.session_state.owner.available_minutes} min available | {len(st.session_state.owner.pets)} pet(s)")
 else:
@@ -54,6 +58,8 @@ st.divider()
 # === PET MANAGEMENT ===
 st.subheader("2️⃣ Add Pets")
 
+supported_breeds = list_supported_breeds()
+
 col1, col2, col3 = st.columns(3)
 with col1:
     pet_name = st.text_input("Pet name", value="Mochi")
@@ -62,7 +68,18 @@ with col2:
 with col3:
     age = st.number_input("Age (years)", min_value=0, max_value=30, value=3)
 
-pet_notes = st.text_input("Notes", value="Energetic and friendly")
+col1, col2 = st.columns(2)
+with col1:
+    breed_input = st.text_input(
+        "Breed (optional — unlocks AI suggestions)",
+        value="",
+        placeholder="e.g. Golden Retriever, Siamese"
+    )
+with col2:
+    pet_notes = st.text_input("Notes", value="Energetic and friendly")
+
+with st.expander("📋 Supported breeds for AI suggestions"):
+    st.write(", ".join(supported_breeds))
 
 if st.button("Add Pet"):
     try:
@@ -70,11 +87,24 @@ if st.button("Add Pet"):
             name=pet_name,
             species=species,
             age_years=age,
-            notes=pet_notes
+            notes=f"{pet_notes} | Breed: {breed_input}" if breed_input else pet_notes
         )
         st.session_state.owner.add_pet(new_pet)
         st.session_state.current_pet = pet_name
-        st.success(f"✓ Added {pet_name} the {species}!")
+
+        if breed_input.strip():
+            with st.spinner(f"Generating AI task suggestions for {breed_input}..."):
+                suggestions = suggest_tasks_for_breed(breed_input.strip(), age)
+                if suggestions:
+                    st.session_state.pending_suggestions[pet_name] = {
+                        "breed": breed_input.strip(),
+                        "suggestions": suggestions,
+                    }
+                    st.success(f"✓ Added {pet_name} the {species}! AI generated {len(suggestions)} task suggestions — review them below.")
+                else:
+                    st.success(f"✓ Added {pet_name} the {species}! (No AI suggestions available for this breed.)")
+        else:
+            st.success(f"✓ Added {pet_name} the {species}!")
     except ValueError as e:
         st.error(f"Error: {e}")
 
@@ -85,17 +115,112 @@ if st.session_state.owner.pets:
     selected_pet = st.selectbox("Select pet to add tasks", pet_names)
     st.session_state.current_pet = selected_pet
 
-    # Show selected pet details
     pet = st.session_state.owner.get_pet(selected_pet)
-    st.caption(f"{pet.species.capitalize()}, {pet.age_years} years old - {pet.notes}")
+    breed_display = ""
+    if pet.notes and "Breed:" in pet.notes:
+        for part in pet.notes.split("|"):
+            if "Breed:" in part:
+                breed_display = part.strip()
+    st.caption(f"{pet.species.capitalize()}, {pet.age_years} years old — {pet.notes.split('|')[0].strip()} {breed_display}")
 else:
     st.info("No pets yet. Add your first pet above!")
     st.stop()
 
 st.divider()
 
+# === AI TASK SUGGESTIONS ===
+current_pet_name = st.session_state.current_pet
+if current_pet_name and current_pet_name in st.session_state.pending_suggestions:
+    pending = st.session_state.pending_suggestions[current_pet_name]
+    breed = pending["breed"]
+    suggestions = pending["suggestions"]
+
+    st.subheader(f"🤖 AI Task Suggestions for {current_pet_name} ({breed})")
+    st.caption("These suggestions are grounded in your pet's breed profile. Accept, modify, or skip each one.")
+
+    accepted_indices = []
+    modified_suggestions = []
+
+    for i, sug in enumerate(suggestions):
+        with st.container(border=True):
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                st.write(f"**{sug['title']}**")
+                st.caption(
+                    f"Category: {sug['category']} | Duration: {sug['duration_minutes']} min | "
+                    f"Priority: {'⭐' * sug['priority']} | Frequency: {sug['frequency']} | "
+                    f"Time: {sug.get('due_time') or 'Flexible'}"
+                )
+            with col2:
+                accept = st.checkbox("Accept", key=f"accept_{current_pet_name}_{i}", value=True)
+                if accept:
+                    accepted_indices.append(i)
+
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("✅ Add Accepted Tasks", type="primary"):
+            pet = st.session_state.owner.get_pet(current_pet_name)
+            added = 0
+            for i in accepted_indices:
+                sug = suggestions[i]
+                task = Task(
+                    title=sug["title"],
+                    category=sug.get("category", "enrichment"),
+                    duration_minutes=int(sug.get("duration_minutes", 15)),
+                    priority=int(sug.get("priority", 3)),
+                    due_time=sug.get("due_time"),
+                    frequency=sug.get("frequency", "daily"),
+                )
+                pet.add_task(task)
+                added += 1
+            del st.session_state.pending_suggestions[current_pet_name]
+            st.success(f"✓ Added {added} AI-suggested tasks to {current_pet_name}!")
+            st.rerun()
+    with col2:
+        if st.button("❌ Dismiss All Suggestions"):
+            del st.session_state.pending_suggestions[current_pet_name]
+            st.rerun()
+
+    st.divider()
+
+# === AI BREED ADVISOR / RAG Q&A ===
+st.subheader("🧠 Ask the AI Breed Advisor")
+
+pet = st.session_state.owner.get_pet(st.session_state.current_pet)
+breed_for_qa = ""
+if pet and pet.notes and "Breed:" in pet.notes:
+    for part in pet.notes.split("|"):
+        if "Breed:" in part:
+            breed_for_qa = part.replace("Breed:", "").strip()
+
+col1, col2 = st.columns([2, 3])
+with col1:
+    qa_breed = st.text_input(
+        "Breed to ask about",
+        value=breed_for_qa,
+        placeholder="e.g. Corgi"
+    )
+with col2:
+    qa_question = st.text_input(
+        "Your question",
+        placeholder="How much exercise does my corgi need?"
+    )
+
+if st.button("Ask AI Advisor", type="primary"):
+    if not qa_breed.strip():
+        st.warning("Please enter a breed name.")
+    elif not qa_question.strip():
+        st.warning("Please enter a question.")
+    else:
+        with st.spinner("Retrieving breed knowledge and generating answer..."):
+            answer = answer_question(qa_breed.strip(), qa_question.strip())
+        st.markdown("**AI Advisor Response:**")
+        st.markdown(answer)
+
+st.divider()
+
 # === TASK MANAGEMENT ===
-st.subheader("3️⃣ Add Tasks")
+st.subheader("3️⃣ Add Tasks Manually")
 
 col1, col2 = st.columns(2)
 with col1:
@@ -128,10 +253,8 @@ if st.button("Add Task"):
 # Show all tasks with sorting and filtering
 pet = st.session_state.owner.get_pet(st.session_state.current_pet)
 if pet and pet.tasks:
-    # Create an expander for better organization
     with st.expander(f"📋 **{pet.name}'s Task List** ({len(pet.tasks)} total tasks)", expanded=True):
 
-        # Add sorting and filtering controls
         col1, col2, col3 = st.columns(3)
         with col1:
             sort_enabled = st.checkbox("🔄 Sort by priority & time", value=True)
@@ -149,10 +272,8 @@ if pet and pet.tasks:
 
         st.divider()
 
-        # Create a scheduler to use its methods
         scheduler = Scheduler(st.session_state.owner)
 
-        # Apply filtering
         if filter_completed == "Only incomplete":
             filtered_tasks = scheduler.filter_tasks(pet_name=pet.name, completed=False)
         elif filter_completed == "Only completed":
@@ -160,19 +281,12 @@ if pet and pet.tasks:
         else:
             filtered_tasks = scheduler.filter_tasks(pet_name=pet.name, completed=None)
 
-        # Apply sorting
-        if sort_enabled:
-            display_tasks = scheduler.sort_tasks(filtered_tasks)
-        else:
-            display_tasks = filtered_tasks
+        display_tasks = scheduler.sort_tasks(filtered_tasks) if sort_enabled else filtered_tasks
 
-        # Display tasks with professional formatting
         if display_tasks:
-            # Show filter results
             if len(display_tasks) != len(pet.tasks):
                 st.info(f"📊 Showing **{len(display_tasks)}** of **{len(pet.tasks)}** tasks")
 
-            # Create DataFrame for better display
             task_data = []
             for task in display_tasks:
                 task_data.append({
@@ -185,7 +299,6 @@ if pet and pet.tasks:
                     "Frequency": task.frequency.capitalize()
                 })
 
-            # Display as interactive dataframe
             st.dataframe(
                 task_data,
                 use_container_width=True,
@@ -197,7 +310,6 @@ if pet and pet.tasks:
                 }
             )
 
-            # Show quick stats
             completed_count = sum(1 for t in display_tasks if t.completed)
             total_time = sum(t.duration_minutes for t in display_tasks)
 
@@ -209,16 +321,14 @@ if pet and pet.tasks:
             with col3:
                 avg_priority = sum(t.priority for t in display_tasks) / len(display_tasks)
                 st.metric("Avg Priority", f"{avg_priority:.1f}/5")
-
         else:
             st.warning(f"⚠️ No tasks match the filter: **{filter_completed}**")
 
 st.divider()
 
-# === VIEW ALL TASKS (FILTERING DEMO) ===
+# === VIEW ALL TASKS ===
 st.subheader("🔍 Task Overview (All Pets)")
 
-# Check if there are any tasks
 total_tasks = sum(len(p.tasks) for p in st.session_state.owner.pets)
 if total_tasks == 0:
     st.info("Add some tasks first to view the overview!")
@@ -238,7 +348,6 @@ else:
             key="overview_filter"
         )
 
-    # Apply filters
     pet_filter = None if view_pet == "All pets" else view_pet
 
     if view_status == "Incomplete only":
@@ -251,11 +360,9 @@ else:
     filtered_overview = scheduler.filter_tasks(pet_name=pet_filter, completed=status_filter)
     sorted_overview = scheduler.sort_tasks(filtered_overview)
 
-    # Display filtered tasks
     if sorted_overview:
         st.write(f"**Showing {len(sorted_overview)} task(s)** (sorted by priority & time)")
         for idx, task in enumerate(sorted_overview):
-            # Find which pet owns this task
             task_pet = next((p.name for p in st.session_state.owner.pets if task in p.tasks), "Unknown")
 
             with st.container(border=True):
@@ -294,22 +401,18 @@ with col2:
     show_all_tasks = st.checkbox("Show all pets", value=True)
 
 if schedule_button:
-    # Create scheduler and generate plan
     scheduler = Scheduler(st.session_state.owner)
-    schedule = scheduler.generate_plan(date="2026-02-15")
+    schedule = scheduler.generate_plan(date="2026-04-18")
 
     st.success(f"✅ Schedule generated for {schedule.date}")
 
-    # Alert about conflicts upfront if they exist
     if schedule.conflicts:
         st.error(f"🚨 {len(schedule.conflicts)} conflict(s) detected! Review warnings below.")
 
-    # Display scheduled tasks
     if schedule.scheduled_tasks:
         st.subheader("📅 Scheduled Tasks")
 
-        # Utilization metrics
-        utilization = int(schedule.total_duration/st.session_state.owner.available_minutes*100)
+        utilization = int(schedule.total_duration / st.session_state.owner.available_minutes * 100)
         col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("Total Duration", f"{schedule.total_duration} min")
@@ -319,16 +422,13 @@ if schedule_button:
             color = "🟢" if utilization < 80 else "🟡" if utilization < 100 else "🔴"
             st.metric("Utilization", f"{color} {utilization}%")
 
-        st.write("")  # spacing
+        st.write("")
 
-        # Display tasks in timeline format
         for st_task in schedule.scheduled_tasks:
             time_display = st_task.scheduled_time if st_task.scheduled_time != "flexible" else "⏰ Flexible"
             priority_stars = "⭐" * st_task.task.priority
 
-            # Check if this task is involved in a conflict
             has_conflict = any(st_task.task.title in conflict for conflict in schedule.conflicts)
-            border_color = "red" if has_conflict else "blue"
 
             with st.container(border=True):
                 col1, col2, col3, col4 = st.columns([2, 3, 2, 1])
@@ -347,7 +447,6 @@ if schedule_button:
 
         st.divider()
 
-    # Display conflicts with enhanced formatting
     if schedule.conflicts:
         st.subheader("⚠️ Scheduling Conflicts Detected")
         st.caption("These tasks overlap in time. Consider adjusting schedules or priorities.")
@@ -355,14 +454,12 @@ if schedule_button:
             st.error(f"**Conflict {i}:** {conflict}")
         st.divider()
 
-    # Display unscheduled tasks
     if schedule.unscheduled_tasks:
         st.subheader("❌ Unscheduled Tasks")
-        st.caption("These tasks didn't fit within your available time. Consider extending available time or lowering priority.")
+        st.caption("These tasks didn't fit within your available time.")
         for task, pet_name in schedule.unscheduled_tasks:
             st.warning(f"**{task.title}** for {pet_name} • {task.duration_minutes} min • Priority: {'⭐' * task.priority}")
 
-    # Summary dashboard
     st.divider()
     st.subheader("📊 Schedule Summary")
     col1, col2, col3 = st.columns(3)
